@@ -45,8 +45,29 @@ jobs:
 
       - name: Publish test summary
         if: always()
-        uses: mikepenz/action-junit-report@v4
-        with:
-          report_paths: "**/target/surefire-reports/TEST-*.xml"
-          check_name: "Test Results (JDK ${{ matrix.java }})"
-          fail_on_failure: true
+        run: |
+          echo "## ✅ Test Results (JDK ${{ matrix.java }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          # 汇总所有模块的测试结果
+          TOTAL=0; FAILED=0; SKIPPED=0
+          for f in $(find . -path "*/surefire-reports/TEST-*.xml" 2>/dev/null); do
+            T=$(grep -oP 'tests="\K[0-9]+' "$f" | head -1 || echo 0)
+            F=$(grep -oP 'failures="\K[0-9]+' "$f" | head -1 || echo 0)
+            S=$(grep -oP 'skipped="\K[0-9]+' "$f" | head -1 || echo 0)
+            TOTAL=$((TOTAL + T))
+            FAILED=$((FAILED + F))
+            SKIPPED=$((SKIPPED + S))
+          done
+          PASSED=$((TOTAL - FAILED - SKIPPED))
+          echo "| 指标 | 数量 |"
+          echo "|---|---|"
+          echo "| 总用例数 | $TOTAL |"
+          echo "| 通过 | $PASSED |"
+          echo "| 失败 | $FAILED |"
+          echo "| 跳过 | $SKIPPED |" >> $GITHUB_STEP_SUMMARY
+          if [ "$FAILED" -gt 0 ]; then
+            echo "❌ $FAILED test(s) failed!"
+            exit 1
+          else
+            echo "✅ All $PASSED tests passed!"
+          fi
