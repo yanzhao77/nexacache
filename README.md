@@ -1,10 +1,8 @@
 <div align="center">
 
+<img src="./src/main/resources/static/images/nexacache-logo.png" alt="NexaCache Logo" width="300"/>
+
 <br/>
-
-<img src="https://img.shields.io/badge/NexaCache-v2.0.0-6C63FF?style=for-the-badge&logo=databricks&logoColor=white" alt="NexaCache"/>
-
-<br/><br/>
 
 **高性能 · 零侵入 · 注解驱动的 Java 本地缓存框架**
 
