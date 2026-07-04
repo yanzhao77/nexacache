@@ -30,13 +30,16 @@
 
 ## 🪪 About
 
-**NexaCache** 是由 **azir** 独立设计并开发的一款面向 Java 生产环境的**本地内存缓存加速框架**。
+**NexaCache** 是一个面向 Spring Boot 应用的**进程内本地缓存框架**，在应用层与数据库之间构建双层指针缓存体系，将高频访问数据常驻 JVM 堆内存，缓存命中时读取延迟可达微秒级，显著降低数据库 I/O 压力。
 
-项目的核心出发点来自于一个真实痛点：在高并发业务场景下，即便使用了连接池，频繁的数据库 I/O 依然是性能瓶颈的主要来源。而引入 Redis 虽然有效，却带来了网络序列化开销、运维复杂度以及数据一致性的额外负担。NexaCache 选择了另一条路——**在 JVM 进程内部构建一套双层缓存体系**，将热点数据的访问延迟压缩到微秒级别，同时通过注解驱动和 SPI 解耦保持对业务代码的零侵入。
+与引入 Redis 相比，NexaCache 无需额外部署任何外部服务，没有网络序列化开销，适合对延迟极度敏感、希望保持架构简洁的单机或小规模集群场景。
 
-框架采用 **Java 21** 编写，充分利用 `MethodHandle`、`Record`、`sealed` 等现代语言特性；缓存引擎选用目前 Java 生态中性能最强的 **Caffeine**；持久层通过 `DataAccessor` SPI 接口与 ORM 框架完全解耦，内置 MyBatis 适配器，架构上预留了 JPA、MyBatis-Plus 等扩展空间。
-
-> **一句话定位**：NexaCache 是一个让你的 Spring Boot 应用在不引入 Redis 的前提下，获得接近 Redis 读取性能的本地缓存解决方案。
+**核心技术特点：**
+- 缓存引擎基于 [Caffeine](https://github.com/ben-manes/caffeine)，支持 LRU 淘汰与 TTL 过期
+- 持久层通过 `DataAccessor` SPI 接口与 ORM 完全解耦，内置 MyBatis 适配器
+- 支持注解声明式（`@NexaCacheable` / `@NexaCacheEvict`）和编程式（`NexaTemplate`）两套 API
+- 高级记录集 API 支持数据库游标风格的逐条操作与无侵入乐观锁
+- 提供 Spring Boot Starter，引入依赖即可开箱使用
 
 ---
 
