@@ -38,3 +38,4 @@ dependency-reduced-pom.xml
 *.db
 *.sqlite
 *.sqlite3
+**/target/
