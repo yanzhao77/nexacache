@@ -74,6 +74,39 @@
         </dependencies>
     </dependencyManagement>
 
+    <!-- 项目元数据 -->
+    <url>https://github.com/yanzhao77/nexacache</url>
+
+    <licenses>
+        <license>
+            <name>MIT License</name>
+            <url>https://opensource.org/licenses/MIT</url>
+        </license>
+    </licenses>
+
+    <developers>
+        <developer>
+            <id>azir</id>
+            <name>azir</name>
+            <url>https://github.com/yanzhao77</url>
+        </developer>
+    </developers>
+
+    <scm>
+        <connection>scm:git:git://github.com/yanzhao77/nexacache.git</connection>
+        <developerConnection>scm:git:ssh://github.com/yanzhao77/nexacache.git</developerConnection>
+        <url>https://github.com/yanzhao77/nexacache/tree/master</url>
+    </scm>
+
+    <!-- GitHub Packages 发布配置 -->
+    <distributionManagement>
+        <repository>
+            <id>github</id>
+            <name>GitHub Packages</name>
+            <url>https://maven.pkg.github.com/yanzhao77/nexacache</url>
+        </repository>
+    </distributionManagement>
+
     <build>
         <plugins>
             <plugin>
