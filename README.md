@@ -2,7 +2,7 @@
 
 <br/>
 
-<img src="https://img.shields.io/badge/NexaCache-v1.0.0-6C63FF?style=for-the-badge&logo=databricks&logoColor=white" alt="NexaCache"/>
+<img src="https://img.shields.io/badge/NexaCache-v1.1.0-6C63FF?style=for-the-badge&logo=databricks&logoColor=white" alt="NexaCache"/>
 
 <br/><br/>
 
@@ -16,6 +16,7 @@
 [![MyBatis](https://img.shields.io/badge/MyBatis-3.0.3-E74C3C?style=flat-square)](https://mybatis.org/)
 [![License](https://img.shields.io/badge/License-MIT-27AE60?style=flat-square)](LICENSE)
 [![Build](https://img.shields.io/badge/Build-Passing-27AE60?style=flat-square&logo=github-actions&logoColor=white)]()
+[![GitHub Packages](https://img.shields.io/badge/GitHub%20Packages-Published-2EA44F?style=flat-square&logo=github&logoColor=white)](https://github.com/yanzhao77/nexacache/packages)
 
 <br/>
 
@@ -133,19 +134,47 @@ entity.findById(id)
 
 ### Step 1：引入依赖
 
+NexaCache 已发布到 **GitHub Packages**，使用前需要在 `~/.m2/settings.xml` 中配置认证：
+
 ```xml
-<!-- Spring Boot Starter（推荐） -->
+<settings>
+  <servers>
+    <server>
+      <id>github-nexacache</id>
+      <username>YOUR_GITHUB_USERNAME</username>
+      <password>YOUR_GITHUB_TOKEN</password>  <!-- 需要 read:packages 权限 -->
+    </server>
+  </servers>
+</settings>
+```
+
+在项目 `pom.xml` 中添加仓库地址：
+
+```xml
+<repositories>
+  <repository>
+    <id>github-nexacache</id>
+    <name>NexaCache GitHub Packages</name>
+    <url>https://maven.pkg.github.com/yanzhao77/nexacache</url>
+  </repository>
+</repositories>
+```
+
+然后引入依赖：
+
+```xml
+<!-- Spring Boot Starter（推荐，包含自动装配） -->
 <dependency>
     <groupId>io.nexacache</groupId>
     <artifactId>nexacache-spring-boot-starter</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 
 <!-- MyBatis 适配器 -->
 <dependency>
     <groupId>io.nexacache</groupId>
     <artifactId>nexacache-adapter-mybatis</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
 </dependency>
 ```
 
@@ -302,7 +331,7 @@ logging:
 | `ttl` | long | `0`（永不过期） | 缓存写入后的存活时间 |
 | `timeUnit` | TimeUnit | `MINUTES` | TTL 的时间单位 |
 
-### `NexaTemplate.EntityOps<T, ID>` 方法
+### `NexaTemplate.EntityOps<T, ID>` 方法（简洁 API）
 
 | 方法 | 说明 |
 |---|---|
@@ -313,6 +342,29 @@ logging:
 | `evict(ID id)` | 仅驱逐缓存（不操作数据库） |
 | `hasPointer(ID id)` | 判断指针层是否存在该主键 |
 | `cacheSize()` | 返回当前缓存区域的估算条目数 |
+
+### `RecordSetSession<T, ID>` 方法（记录集高级 API）
+
+通过 `nexaTemplate.opsForRecordSet(Entity.class)` 获取，实现 `AutoCloseable`，推荐配合 `try-with-resources` 使用。
+
+| 方法 | 操作语义 | 说明 |
+|---|---|---|
+| `start(ID id)` | START | 将单条记录加载到缓存并记录版本快照（乐观锁基准） |
+| `open(List<T>)` | OPEN | 批量加载指定记录列表并打开游标 |
+| `openAll()` | OPEN ALL | 从数据库查询全部记录并打开游标 |
+| `read()` | READ | 读取 `start()` 加载的单条记录 |
+| `current()` | CURRENT | 读取游标当前指向的记录 |
+| `next()` | FETCH NEXT | 游标前移，返回是否移动成功 |
+| `prev()` | FETCH PRIOR | 游标后移，返回是否移动成功 |
+| `first()` | FETCH FIRST | 游标移到第一条 |
+| `last()` | FETCH LAST | 游标移到最后一条 |
+| `write(T entity)` | WRITE | 新增记录（持久化 + 写缓存） |
+| `rewrite(T entity)` | REWRITE | 更新记录（含乐观锁校验，冲突时抛 `ConcurrentModificationException`） |
+| `delete()` | DELETE | 删除游标当前记录（数据库 + 缓存同步） |
+| `deleteById(ID id)` | DELETE BY ID | 按主键删除记录 |
+| `size()` | — | 返回当前记录集条目数 |
+| `state()` | — | 返回游标状态（`IDLE/READY/OPEN/EOF/CLOSED`） |
+| `close()` | CLOSE | 关闭记录集，释放游标资源 |
 
 ---
 
@@ -363,13 +415,19 @@ nexacache/
 
 ## 🔬 测试覆盖
 
-核心模块包含 **16 个单元测试**，覆盖以下场景：
+核心模块包含 **35 个单元测试**，全部通过，覆盖以下场景：
 
 | 测试套件 | 测试数 | 覆盖场景 |
 |---|---|---|
 | `EntityMetaTests` | 5 | 注解解析、默认值、主键提取、缓存键构建、异常处理 |
 | `CacheRegionTests` | 7 | 写入/读取、未命中、驱逐、指针同步、清空、更新覆盖 |
 | `CacheRegistryTests` | 4 | 注册、幂等性、未注册异常、全量清空 |
+| `RecordSetSessionTest$StartTests` | 4 | START 加载、缓存命中、不存在 ID 异常、版本快照 |
+| `RecordSetSessionTest$OpenAndCursorTests` | 7 | openAll、next 遍历、EOF 状态、first/last/prev 游标导航 |
+| `RecordSetSessionTest$WriteTests` | 1 | WRITE 持久化并回填主键 |
+| `RecordSetSessionTest$RewriteTests` | 2 | REWRITE 更新、无快照时跳过乐观锁 |
+| `RecordSetSessionTest$DeleteTests` | 2 | DELETE 游标当前记录、deleteById |
+| `RecordSetSessionTest$CloseTests` | 3 | CLOSE 状态变更、关闭后操作异常、try-with-resources |
 
 运行测试：
 
