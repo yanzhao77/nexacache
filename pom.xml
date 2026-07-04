@@ -16,6 +16,7 @@
         <module>nexacache-adapter-mybatis</module>
         <module>nexacache-spring-boot-starter</module>
         <module>nexacache-demo</module>
+        <module>nexacache-benchmark</module>
     </modules>
 
     <properties>
