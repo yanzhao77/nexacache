@@ -4,6 +4,7 @@ import io.nexacache.cache.CacheRegion;
 import io.nexacache.cache.CacheRegistry;
 import io.nexacache.domain.EntityMeta;
 import io.nexacache.exception.NexaCacheException;
+import io.nexacache.recordset.RecordSetSession;
 import io.nexacache.spi.DataAccessor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,18 +14,45 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * NexaCache 核心门面，提供编程式缓存操作 API。
- * 类似 Spring 的 {@code RedisTemplate}，通过 {@code opsForEntity()} 获取特定实体的操作对象。
+ * NexaCache 核心门面，提供两套编程式缓存操作 API：
  *
- * <p>示例：
+ * <ul>
+ *   <li><b>简洁 API</b>（{@link #opsForEntity(Class)}）：适合常规 CRUD 场景，
+ *       一行代码完成缓存感知的增删改查。</li>
+ *   <li><b>记录集高级 API</b>（{@link #opsForRecordSet(Class)}）：适合需要游标导航、
+ *       逐条遍历或精细控制缓存生命周期的场景，提供 START/OPEN/READ/NEXT/PREV/
+ *       REWRITE/DELETE/CLOSE 等数据库游标风格操作。</li>
+ * </ul>
+ *
+ * <p>简洁 API 示例：
  * <pre>{@code
- * @Autowired NexaTemplate nexaTemplate;
- *
  * // 查询（优先走缓存）
  * Optional<User> user = nexaTemplate.opsForEntity(User.class).findById(1L);
  *
  * // 写入（持久化 + 更新缓存）
  * nexaTemplate.opsForEntity(User.class).save(user);
+ * }</pre>
+ *
+ * <p>记录集高级 API 示例：
+ * <pre>{@code
+ * // START + READ：加载单条记录并读取
+ * try (RecordSetSession<Product, Long> rs = nexaTemplate.opsForRecordSet(Product.class)) {
+ *     rs.start(1L);
+ *     Product p = rs.read().orElseThrow();
+ *
+ *     // REWRITE：带乐观锁更新
+ *     p.setPrice(new BigDecimal("199.9"));
+ *     rs.rewrite(p);
+ * }
+ *
+ * // OPEN + 游标遍历
+ * try (RecordSetSession<Product, Long> rs = nexaTemplate.opsForRecordSet(Product.class)) {
+ *     rs.openAll();
+ *     while (rs.next()) {
+ *         Product cur = rs.current().orElseThrow();
+ *         System.out.println(cur.getName());
+ *     }
+ * }
  * }</pre>
  *
  * @author azir
@@ -40,8 +68,10 @@ public class NexaTemplate {
     /** 操作对象缓存，避免重复创建 */
     private final ConcurrentHashMap<Class<?>, EntityOps<?, ?>> opsCache = new ConcurrentHashMap<>();
 
+    // ===================== 简洁 API =====================
+
     /**
-     * 获取指定实体类型的操作对象。
+     * 获取指定实体类型的简洁操作对象（CRUD + 缓存协调）。
      *
      * @param entityClass 实体类型
      * @param <T>         实体类型
@@ -60,6 +90,48 @@ public class NexaTemplate {
         });
     }
 
+    // ===================== 记录集高级 API =====================
+
+    /**
+     * 获取指定实体类型的记录集会话（游标风格高级操作）。
+     *
+     * <p>返回的 {@link RecordSetSession} 实现了 {@link AutoCloseable}，
+     * 推荐配合 try-with-resources 使用，确保游标资源自动释放。
+     *
+     * <p>操作语义：
+     * <ul>
+     *   <li>{@code start(id)}   — 将单条记录加载到缓存，建立指针（类似数据库 FETCH）</li>
+     *   <li>{@code open(list)}  — 批量加载记录并打开游标（类似 OPEN CURSOR）</li>
+     *   <li>{@code openAll()}   — 从数据库查询全部记录并打开游标</li>
+     *   <li>{@code read()}      — 读取 start() 加载的单条记录</li>
+     *   <li>{@code current()}   — 读取游标当前指向的记录</li>
+     *   <li>{@code next()}      — 游标前移（类似 FETCH NEXT）</li>
+     *   <li>{@code prev()}      — 游标后移（类似 FETCH PRIOR）</li>
+     *   <li>{@code first()}     — 游标移到第一条（类似 FETCH FIRST）</li>
+     *   <li>{@code last()}      — 游标移到最后一条（类似 FETCH LAST）</li>
+     *   <li>{@code write(e)}    — 新增记录（持久化 + 写缓存）</li>
+     *   <li>{@code rewrite(e)}  — 更新记录（含乐观锁校验）</li>
+     *   <li>{@code delete()}    — 删除当前游标记录</li>
+     *   <li>{@code close()}     — 关闭记录集，释放游标资源</li>
+     * </ul>
+     *
+     * @param entityClass 实体类型
+     * @param <T>         实体类型
+     * @param <ID>        主键类型
+     * @return 记录集会话（AutoCloseable）
+     */
+    @SuppressWarnings("unchecked")
+    public <T, ID> RecordSetSession<T, ID> opsForRecordSet(Class<T> entityClass) {
+        CacheRegion<T, ID> region = registry.getRegion(entityClass);
+        DataAccessor<T, ID> accessor = (DataAccessor<T, ID>) accessorMap.get(entityClass);
+        if (accessor == null) {
+            throw new NexaCacheException("未找到实体类 [" + entityClass.getName() + "] 对应的 DataAccessor，请检查适配器配置");
+        }
+        return new RecordSetSession<>(region, accessor);
+    }
+
+    // ===================== 通用操作 =====================
+
     /**
      * 注册 DataAccessor（通常由 Spring 自动装配完成）。
      */
@@ -69,16 +141,18 @@ public class NexaTemplate {
     }
 
     /**
-     * 清空所有缓存。
+     * 清空所有缓存区域。
      */
     public void clearAll() {
         registry.clearAll();
     }
 
-    // ===================== 内部操作类 =====================
+    // ===================== 简洁操作内部类 =====================
 
     /**
-     * 针对特定实体类型的操作封装，提供 CRUD + 缓存协调。
+     * 针对特定实体类型的简洁操作封装，提供 CRUD + 缓存协调。
+     *
+     * <p>适合常规业务场景，无需关心游标、版本控制等细节。
      */
     @Slf4j
     @RequiredArgsConstructor
@@ -91,16 +165,13 @@ public class NexaTemplate {
          * 根据主键查询（优先从缓存读取，未命中则查库并回填缓存）。
          */
         public Optional<T> findById(ID id) {
-            // 1. 查指针层（O(1)）
             Optional<T> cached = region.get(id);
             if (cached.isPresent()) {
                 log.debug("[NexaCache] 缓存命中: region={}, id={}", region.getMeta().getRegion(), id);
                 return cached;
             }
-            // 2. 查数据库
             log.debug("[NexaCache] 缓存未命中，查询数据库: region={}, id={}", region.getMeta().getRegion(), id);
             Optional<T> fromDb = accessor.findById(id);
-            // 3. 回填缓存
             fromDb.ifPresent(region::put);
             return fromDb;
         }
@@ -109,21 +180,18 @@ public class NexaTemplate {
          * 写入实体（持久化到数据库，并将结果写入缓存）。
          * 若主键为 null，则执行 INSERT 并回填自增主键；否则执行 UPDATE。
          */
+        @SuppressWarnings("unchecked")
         public T save(T entity) {
             EntityMeta<T> meta = region.getMeta();
             Object id = meta.extractId(entity);
             if (id == null) {
-                // INSERT
                 accessor.insert(entity);
                 log.debug("[NexaCache] INSERT 完成: region={}", meta.getRegion());
             } else {
-                // UPDATE
                 accessor.update(entity);
-                // 驱逐旧缓存，写入新值
                 region.evict((ID) id);
                 log.debug("[NexaCache] UPDATE 完成: region={}, id={}", meta.getRegion(), id);
             }
-            // 回填缓存（INSERT 后主键已由 MyBatis 回填到实体）
             region.put(entity);
             return entity;
         }
@@ -138,8 +206,8 @@ public class NexaTemplate {
         }
 
         /**
-         * 将实体加载到缓存指针（仅缓存，不操作数据库）。
-         * 相当于原框架的 START 操作。
+         * 将实体加载到缓存（仅缓存，不操作数据库）。
+         * 适用于缓存预热场景。
          */
         public void load(T entity) {
             region.put(entity);
@@ -160,7 +228,7 @@ public class NexaTemplate {
         }
 
         /**
-         * 返回当前缓存区域的条目数。
+         * 返回当前缓存区域的估算条目数。
          */
         public long cacheSize() {
             return region.size();

@@ -218,6 +218,10 @@ public class ProductService {
 
 **方式二：编程式 API（精细控制）**
 
+NexaCache 提供两套编程式 API：**简洁 API**（常规 CRUD）与**记录集高级 API**（游标导航、乐观锁）。
+
+**1. 简洁 API：**
+
 ```java
 NexaTemplate.EntityOps<Product, Long> ops = nexaTemplate.opsForEntity(Product.class);
 
@@ -236,6 +240,31 @@ ops.load(product.get());
 // 查询缓存状态
 boolean inCache = ops.hasPointer(1L);
 long size = ops.cacheSize();
+```
+
+**2. 记录集高级 API（游标与乐观锁）：**
+
+借鉴数据库游标思想，适合需要逐条遍历或并发控制的场景。
+
+```java
+// START + REWRITE：加载记录并使用乐观锁更新
+try (RecordSetSession<Product, Long> rs = nexaTemplate.opsForRecordSet(Product.class)) {
+    rs.start(1L); // 将记录加载到缓存并记录版本快照
+    Product p = rs.read().orElseThrow();
+    
+    p.setPrice(new BigDecimal("199.9"));
+    // 若期间有其他线程修改了该记录，将抛出 ConcurrentModificationException
+    rs.rewrite(p); 
+} // 自动 close()
+
+// OPEN + 游标遍历
+try (RecordSetSession<Product, Long> rs = nexaTemplate.opsForRecordSet(Product.class)) {
+    rs.openAll(); // 批量加载并打开游标
+    while (rs.next()) {
+        Product cur = rs.current().orElseThrow();
+        System.out.println(cur.getName());
+    }
+}
 ```
 
 ### Step 5：配置文件

@@ -6,7 +6,7 @@
 
     <groupId>io.nexacache</groupId>
     <artifactId>nexacache-parent</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>pom</packaging>
     <name>NexaCache Parent</name>
     <description>NexaCache - 注解驱动的高性能指针式内存缓存框架</description>
