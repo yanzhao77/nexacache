@@ -1,0 +1,11 @@
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/cache/CacheRegion.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/annotation/NexaEntity.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/annotation/NexaId.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/annotation/NexaCacheable.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/api/NexaTemplate.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/cache/NexaCacheAspect.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/spi/DataAccessor.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/cache/CacheRegistry.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/exception/NexaCacheException.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/annotation/NexaCacheEvict.java
+/home/ubuntu/nexacache/nexacache-core/src/main/java/io/nexacache/domain/EntityMeta.java
