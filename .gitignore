@@ -1,7 +1,10 @@
+### Maven ###
 target/
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+# maven-shade-plugin 自动生成的中间文件，无需提交
+dependency-reduced-pom.xml
 
 ### STS ###
 .apt_generated
@@ -20,9 +23,8 @@ target/
 
 ### NetBeans ###
 *.nbparts
-*.xml
+# 注意：不要使用 *.xml，会误忽略 pom.xml 等重要文件
 *.prefs
-*.project
 .nb-gradle-properties
 
 ### VS Code ###
