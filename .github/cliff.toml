@@ -1,0 +1,59 @@
+# git-cliff 配置文件
+# 文档：https://git-cliff.org/docs/configuration
+
+[changelog]
+header = ""
+body = """
+{% if version %}\
+## {{ version | trim_start_matches(pat="v") }} — {{ timestamp | date(format="%Y-%m-%d") }}
+{% else %}\
+## Unreleased
+{% endif %}\
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | upper_first }} \
+  ([`{{ commit.id | truncate(length=7, end="") }}`](https://github.com/{{ remote.github.owner }}/{{ remote.github.repo }}/commit/{{ commit.id }}))\
+  {% if commit.breaking %} ⚠️ **BREAKING**{% endif %}
+
+{% endfor %}
+{% endfor %}\n
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_unconventional = false
+split_commits = false
+
+# 提交类型到分组的映射
+commit_parsers = [
+  { message = "^feat",     group = "✨ 新特性"    },
+  { message = "^fix",      group = "🐛 Bug 修复"  },
+  { message = "^perf",     group = "⚡ 性能优化"  },
+  { message = "^refactor", group = "♻️ 代码重构"  },
+  { message = "^chore",    group = "🔧 依赖 & 构建" },
+  { message = "^docs",     group = "📝 文档更新"  },
+  { message = "^test",     group = "✅ 测试"      },
+  { message = "^style",    group = "💄 代码风格"  },
+  { message = "^ci",       group = "👷 CI/CD"    },
+  { message = "^revert",   group = "⏪ 回滚"      },
+  { message = ".*",        group = "📦 其他变更"  },
+]
+
+# 过滤掉 [skip ci] 等自动提交
+commit_preprocessors = [
+  { pattern = "\\(#([0-9]+)\\)", replace = "([#${1}](https://github.com/yanzhao77/nexacache/issues/${1}))" },
+]
+
+filter_commits = false
+tag_pattern = "v[0-9].*"
+skip_tags = ""
+ignore_tags = ""
+topo_order = false
+sort_commits = "oldest"
+
+[remote.github]
+owner = "yanzhao77"
+repo  = "nexacache"

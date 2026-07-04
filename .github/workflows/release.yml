@@ -1,0 +1,255 @@
+name: CD — Release & Publish Packages
+
+on:
+  push:
+    tags:
+      - "v*.*.*"   # 触发条件：推送任意 v*.*.* 格式的 tag
+
+permissions:
+  contents: write        # 允许创建 Release 和写入 changelog
+  packages: write        # 允许发布到 GitHub Packages
+
+jobs:
+  # ─────────────────────────────────────────────
+  # Job 1: 构建、测试、打包
+  # ─────────────────────────────────────────────
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 获取完整 git 历史，用于生成 changelog
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: "25"
+          distribution: "temurin"
+          cache: "maven"
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          TAG="${GITHUB_REF_NAME}"          # e.g. v2.1.0
+          VERSION="${TAG#v}"                # e.g. 2.1.0
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}"         >> "$GITHUB_OUTPUT"
+          echo "Releasing version: ${VERSION}"
+
+      - name: Verify pom.xml version matches tag
+        run: |
+          POM_VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          TAG_VERSION="${{ steps.get_version.outputs.version }}"
+          echo "pom.xml version : ${POM_VERSION}"
+          echo "tag version     : ${TAG_VERSION}"
+          if [ "${POM_VERSION}" != "${TAG_VERSION}" ]; then
+            echo "::warning::pom.xml version (${POM_VERSION}) does not match tag (${TAG_VERSION}). Proceeding anyway."
+          fi
+
+      - name: Build & run all tests
+        run: mvn clean verify --batch-mode --no-transfer-progress
+
+      - name: Generate sources JARs
+        run: |
+          mvn source:jar --batch-mode --no-transfer-progress \
+            -pl nexacache-core,nexacache-adapter-mybatis,nexacache-spring-boot-starter
+
+      - name: Collect release artifacts
+        run: |
+          mkdir -p release-artifacts
+          find . -path "*/target/nexacache-*.jar" \
+            ! -name "*javadoc*" \
+            ! -path "*/nexacache-parent*" \
+            | sort | xargs -I{} cp {} release-artifacts/
+          echo "=== Artifacts to release ==="
+          ls -lh release-artifacts/
+
+      - name: Upload artifacts for next job
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-jars
+          path: release-artifacts/
+          retention-days: 1
+
+  # ─────────────────────────────────────────────
+  # Job 2: 生成 Changelog 并发布 GitHub Release
+  # ─────────────────────────────────────────────
+  github-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download release JARs
+        uses: actions/download-artifact@v4
+        with:
+          name: release-jars
+          path: release-artifacts/
+
+      - name: Generate Changelog
+        id: changelog
+        uses: orhun/git-cliff-action@v3
+        with:
+          config: .github/cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGELOG_LATEST.md
+          GITHUB_REPO: ${{ github.repository }}
+
+      - name: Read changelog content
+        id: read_changelog
+        run: |
+          if [ -f "CHANGELOG_LATEST.md" ] && [ -s "CHANGELOG_LATEST.md" ]; then
+            echo "has_changelog=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changelog=false" >> "$GITHUB_OUTPUT"
+            # 回退：从 git log 生成简单的 changelog
+            PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+            if [ -n "$PREV_TAG" ]; then
+              git log "${PREV_TAG}..HEAD" \
+                --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))" \
+                --no-merges > CHANGELOG_LATEST.md
+            else
+              git log --pretty=format:"- %s ([%h](https://github.com/${{ github.repository }}/commit/%H))" \
+                --no-merges -20 > CHANGELOG_LATEST.md
+            fi
+          fi
+
+      - name: Build release notes
+        id: release_notes
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          TAG="${GITHUB_REF_NAME}"
+
+          cat > RELEASE_NOTES.md << 'NOTES_EOF'
+          ## 📦 下载说明
+
+          | 文件 | 说明 |
+          |---|---|
+          | `nexacache-spring-boot-starter-*.jar` | Spring Boot 自动装配（**推荐引入**） |
+          | `nexacache-adapter-mybatis-*.jar` | MyBatis 持久层适配器 |
+          | `nexacache-core-*.jar` | 核心引擎（无框架依赖） |
+          | `nexacache-demo-*.jar` | 完整示例应用 |
+          | `*-sources.jar` | 对应模块源码包 |
+
+          ## 🔧 Maven 引入
+
+          ```xml
+          <dependency>
+              <groupId>io.nexacache</groupId>
+              <artifactId>nexacache-spring-boot-starter</artifactId>
+              <version>VERSION_PLACEHOLDER</version>
+          </dependency>
+          ```
+
+          > GitHub Packages 地址：https://github.com/yanzhao77/nexacache/packages
+          NOTES_EOF
+
+          # 替换版本占位符
+          sed -i "s/VERSION_PLACEHOLDER/${VERSION}/g" RELEASE_NOTES.md
+
+          # 合并 changelog + 下载说明
+          {
+            echo "## 📝 版本更新说明"
+            echo ""
+            cat CHANGELOG_LATEST.md
+            echo ""
+            cat RELEASE_NOTES.md
+          } > FULL_RELEASE_NOTES.md
+
+          echo "=== Release Notes Preview ==="
+          head -30 FULL_RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "NexaCache ${{ github.ref_name }}"
+          body_path: FULL_RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          files: release-artifacts/*
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update CHANGELOG.md in repository
+        run: |
+          # 追加最新版本的 changelog 到仓库根目录的 CHANGELOG.md
+          TAG="${GITHUB_REF_NAME}"
+          DATE=$(date +%Y-%m-%d)
+
+          if [ ! -f "CHANGELOG.md" ]; then
+            echo "# Changelog" > CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "All notable changes to NexaCache will be documented in this file." >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          fi
+
+          # 在文件头部插入新版本记录
+          {
+            head -3 CHANGELOG.md
+            echo ""
+            echo "## [${TAG}] — ${DATE}"
+            echo ""
+            cat CHANGELOG_LATEST.md
+            echo ""
+            tail -n +4 CHANGELOG.md
+          } > CHANGELOG_NEW.md
+          mv CHANGELOG_NEW.md CHANGELOG.md
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git diff --staged --quiet || git commit -m "docs: update CHANGELOG.md for ${TAG} [skip ci]"
+          git push origin HEAD:master || echo "Push skipped (no changes)"
+
+  # ─────────────────────────────────────────────
+  # Job 3: 发布到 GitHub Packages (Maven Registry)
+  # ─────────────────────────────────────────────
+  publish-packages:
+    name: Publish to GitHub Packages
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25 with GitHub Packages
+        uses: actions/setup-java@v4
+        with:
+          java-version: "25"
+          distribution: "temurin"
+          cache: "maven"
+          server-id: github                          # 对应 pom.xml distributionManagement id
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_TOKEN
+
+      - name: Deploy to GitHub Packages
+        run: |
+          mvn deploy -DskipTests --batch-mode --no-transfer-progress \
+            -pl nexacache-core,nexacache-adapter-mybatis,nexacache-spring-boot-starter \
+            -am
+        env:
+          MAVEN_USERNAME: ${{ github.actor }}
+          MAVEN_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print package URLs
+        run: |
+          VERSION="${{ needs.build.outputs.version }}"
+          REPO="https://github.com/yanzhao77/nexacache/packages"
+          echo "✅ Published packages:"
+          echo "  nexacache-core                 ${VERSION}"
+          echo "  nexacache-adapter-mybatis      ${VERSION}"
+          echo "  nexacache-spring-boot-starter  ${VERSION}"
+          echo "  View at: ${REPO}"
