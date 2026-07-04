@@ -2,7 +2,7 @@ spring:
   application:
     name: nexacache-demo-test
   datasource:
-    url: jdbc:sqlite::memory:?cache=shared
+    url: jdbc:sqlite:nexacache-demo-test.db
     driver-class-name: org.sqlite.JDBC
 
 mybatis:
