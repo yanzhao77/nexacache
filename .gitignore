@@ -30,3 +30,9 @@ target/
 
 ### Mac OS ###
 .DS_Store
+
+### SQLite / 内存数据库 ###
+# 防止 SQLite 文件和内存数据库路径被误提交
+*.db
+*.sqlite
+*.sqlite3
