@@ -58,17 +58,17 @@ class NexaCacheCoreTest {
         @DisplayName("正确解析 @NexaEntity 注解属性")
         void shouldParseNexaEntityAnnotation() {
             EntityMeta<TestProduct> meta = EntityMeta.of(TestProduct.class);
-            assertEquals("test_product", meta.getRegion());
-            assertEquals(100L, meta.getMaxSize());
-            assertEquals(5L, meta.getTtl());
-            assertEquals(TimeUnit.MINUTES, meta.getTimeUnit());
+            assertEquals("test_product", meta.region());
+            assertEquals(100L, meta.maxSize());
+            assertEquals(5L, meta.ttl());
+            assertEquals(TimeUnit.MINUTES, meta.timeUnit());
         }
 
         @Test
         @DisplayName("未指定 region 时，默认使用类名小写")
         void shouldUseClassNameAsDefaultRegion() {
             EntityMeta<SimpleItem> meta = EntityMeta.of(SimpleItem.class);
-            assertEquals("simpleitem", meta.getRegion());
+            assertEquals("simpleitem", meta.region());
         }
 
         @Test

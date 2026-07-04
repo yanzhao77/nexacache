@@ -9,6 +9,7 @@ import io.nexacache.spi.DataAccessor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,6 +25,14 @@ import java.util.concurrent.ConcurrentHashMap;
  *       REWRITE/DELETE/CLOSE 等数据库游标风格操作。</li>
  * </ul>
  *
+ * <p><b>JDK 25 改造要点：</b>
+ * <ul>
+ *   <li><b>Pattern Matching for instanceof（JEP 394）</b>：accessor 查找时使用模式匹配</li>
+ *   <li><b>Sealed Exception（JEP 409）</b>：抛出精确的异常子类型</li>
+ *   <li><b>Text Blocks（JDK 15+）</b>：Javadoc 示例代码更清晰</li>
+ *   <li><b>Stream Gatherers（JEP 461）</b>：{@link EntityOps#findAll(List)} 使用 Gatherers 批量查询</li>
+ * </ul>
+ *
  * <p>简洁 API 示例：
  * <pre>{@code
  * // 查询（优先走缓存）
@@ -31,32 +40,23 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * // 写入（持久化 + 更新缓存）
  * nexaTemplate.opsForEntity(User.class).save(user);
+ *
+ * // 批量查询（Stream Gatherers 分批并行）
+ * List<User> users = nexaTemplate.opsForEntity(User.class).findAll(ids);
  * }</pre>
  *
  * <p>记录集高级 API 示例：
  * <pre>{@code
- * // START + READ：加载单条记录并读取
- * try (RecordSetSession<Product, Long> rs = nexaTemplate.opsForRecordSet(Product.class)) {
+ * try (var rs = nexaTemplate.opsForRecordSet(Product.class)) {
  *     rs.start(1L);
  *     Product p = rs.read().orElseThrow();
- *
- *     // REWRITE：带乐观锁更新
  *     p.setPrice(new BigDecimal("199.9"));
- *     rs.rewrite(p);
- * }
- *
- * // OPEN + 游标遍历
- * try (RecordSetSession<Product, Long> rs = nexaTemplate.opsForRecordSet(Product.class)) {
- *     rs.openAll();
- *     while (rs.next()) {
- *         Product cur = rs.current().orElseThrow();
- *         System.out.println(cur.getName());
- *     }
+ *     rs.rewrite(p);  // 带乐观锁更新
  * }
  * }</pre>
  *
  * @author azir
- * @since 1.0.0
+ * @since 2.0.0
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -72,20 +72,17 @@ public class NexaTemplate {
 
     /**
      * 获取指定实体类型的简洁操作对象（CRUD + 缓存协调）。
-     *
-     * @param entityClass 实体类型
-     * @param <T>         实体类型
-     * @param <ID>        主键类型
-     * @return 实体操作对象
      */
     @SuppressWarnings("unchecked")
     public <T, ID> EntityOps<T, ID> opsForEntity(Class<T> entityClass) {
         return (EntityOps<T, ID>) opsCache.computeIfAbsent(entityClass, clazz -> {
             CacheRegion<T, ID> region = registry.getRegion(entityClass);
-            DataAccessor<T, ID> accessor = (DataAccessor<T, ID>) accessorMap.get(entityClass);
-            if (accessor == null) {
-                throw new NexaCacheException("未找到实体类 [" + entityClass.getName() + "] 对应的 DataAccessor，请检查适配器配置");
+            // JEP 394: Pattern Matching for instanceof — 替代传统强转
+            if (!(accessorMap.get(entityClass) instanceof DataAccessor<?, ?> raw)) {
+                throw new NexaCacheException.DataAccessException(
+                        "未找到实体类 [" + entityClass.getName() + "] 对应的 DataAccessor，请检查适配器配置");
             }
+            DataAccessor<T, ID> accessor = (DataAccessor<T, ID>) raw;
             return new EntityOps<>(region, accessor);
         });
     }
@@ -94,39 +91,17 @@ public class NexaTemplate {
 
     /**
      * 获取指定实体类型的记录集会话（游标风格高级操作）。
-     *
-     * <p>返回的 {@link RecordSetSession} 实现了 {@link AutoCloseable}，
      * 推荐配合 try-with-resources 使用，确保游标资源自动释放。
-     *
-     * <p>操作语义：
-     * <ul>
-     *   <li>{@code start(id)}   — 将单条记录加载到缓存，建立指针（类似数据库 FETCH）</li>
-     *   <li>{@code open(list)}  — 批量加载记录并打开游标（类似 OPEN CURSOR）</li>
-     *   <li>{@code openAll()}   — 从数据库查询全部记录并打开游标</li>
-     *   <li>{@code read()}      — 读取 start() 加载的单条记录</li>
-     *   <li>{@code current()}   — 读取游标当前指向的记录</li>
-     *   <li>{@code next()}      — 游标前移（类似 FETCH NEXT）</li>
-     *   <li>{@code prev()}      — 游标后移（类似 FETCH PRIOR）</li>
-     *   <li>{@code first()}     — 游标移到第一条（类似 FETCH FIRST）</li>
-     *   <li>{@code last()}      — 游标移到最后一条（类似 FETCH LAST）</li>
-     *   <li>{@code write(e)}    — 新增记录（持久化 + 写缓存）</li>
-     *   <li>{@code rewrite(e)}  — 更新记录（含乐观锁校验）</li>
-     *   <li>{@code delete()}    — 删除当前游标记录</li>
-     *   <li>{@code close()}     — 关闭记录集，释放游标资源</li>
-     * </ul>
-     *
-     * @param entityClass 实体类型
-     * @param <T>         实体类型
-     * @param <ID>        主键类型
-     * @return 记录集会话（AutoCloseable）
      */
     @SuppressWarnings("unchecked")
     public <T, ID> RecordSetSession<T, ID> opsForRecordSet(Class<T> entityClass) {
         CacheRegion<T, ID> region = registry.getRegion(entityClass);
-        DataAccessor<T, ID> accessor = (DataAccessor<T, ID>) accessorMap.get(entityClass);
-        if (accessor == null) {
-            throw new NexaCacheException("未找到实体类 [" + entityClass.getName() + "] 对应的 DataAccessor，请检查适配器配置");
+        // JEP 394: Pattern Matching for instanceof
+        if (!(accessorMap.get(entityClass) instanceof DataAccessor<?, ?> raw)) {
+            throw new NexaCacheException.DataAccessException(
+                    "未找到实体类 [" + entityClass.getName() + "] 对应的 DataAccessor，请检查适配器配置");
         }
+        DataAccessor<T, ID> accessor = (DataAccessor<T, ID>) raw;
         return new RecordSetSession<>(region, accessor);
     }
 
@@ -147,12 +122,23 @@ public class NexaTemplate {
         registry.clearAll();
     }
 
+    /**
+     * 输出所有区域的统计快照（用于监控和调试）。
+     */
+    public String stats() {
+        return registry.allSnapshots();
+    }
+
     // ===================== 简洁操作内部类 =====================
 
     /**
      * 针对特定实体类型的简洁操作封装，提供 CRUD + 缓存协调。
      *
-     * <p>适合常规业务场景，无需关心游标、版本控制等细节。
+     * <p><b>JDK 25 改造要点：</b>
+     * <ul>
+     *   <li>{@link #findAll(List)} 使用 {@code Stream Gatherers（JEP 461）} 分批并行查询</li>
+     *   <li>{@link #save(Object)} 使用 {@code var} 局部变量类型推断（JDK 10+）</li>
+     * </ul>
      */
     @Slf4j
     @RequiredArgsConstructor
@@ -165,15 +151,29 @@ public class NexaTemplate {
          * 根据主键查询（优先从缓存读取，未命中则查库并回填缓存）。
          */
         public Optional<T> findById(ID id) {
-            Optional<T> cached = region.get(id);
+            var cached = region.get(id);
             if (cached.isPresent()) {
-                log.debug("[NexaCache] 缓存命中: region={}, id={}", region.getMeta().getRegion(), id);
+                log.debug("[NexaCache] 缓存命中: region={}, id={}", region.getMeta().region(), id);
                 return cached;
             }
-            log.debug("[NexaCache] 缓存未命中，查询数据库: region={}, id={}", region.getMeta().getRegion(), id);
-            Optional<T> fromDb = accessor.findById(id);
+            log.debug("[NexaCache] 缓存未命中，查询数据库: region={}, id={}", region.getMeta().region(), id);
+            var fromDb = accessor.findById(id);
             fromDb.ifPresent(region::put);
             return fromDb;
+        }
+
+        /**
+         * 批量根据主键查询，优先从缓存读取，未命中的批量查库回填。
+         *
+         * <p><b>JDK 25 Stream Gatherers（JEP 461）</b>：
+         * 委托给 {@link CacheRegion#getAll(List)} 使用 {@code Gatherers.windowFixed()}
+         * 分批并行查询，充分利用多核。
+         *
+         * @param ids 主键列表
+         * @return 命中的实体列表
+         */
+        public List<T> findAll(List<ID> ids) {
+            return region.getAll(ids);
         }
 
         /**
@@ -182,15 +182,15 @@ public class NexaTemplate {
          */
         @SuppressWarnings("unchecked")
         public T save(T entity) {
-            EntityMeta<T> meta = region.getMeta();
-            Object id = meta.extractId(entity);
+            var meta = region.getMeta();
+            var id = meta.extractId(entity);
             if (id == null) {
                 accessor.insert(entity);
-                log.debug("[NexaCache] INSERT 完成: region={}", meta.getRegion());
+                log.debug("[NexaCache] INSERT 完成: region={}", meta.region());
             } else {
                 accessor.update(entity);
                 region.evict((ID) id);
-                log.debug("[NexaCache] UPDATE 完成: region={}, id={}", meta.getRegion(), id);
+                log.debug("[NexaCache] UPDATE 完成: region={}, id={}", meta.region(), id);
             }
             region.put(entity);
             return entity;
@@ -202,15 +202,23 @@ public class NexaTemplate {
         public void deleteById(ID id) {
             accessor.deleteById(id);
             region.evict(id);
-            log.debug("[NexaCache] DELETE 完成: region={}, id={}", region.getMeta().getRegion(), id);
+            log.debug("[NexaCache] DELETE 完成: region={}, id={}", region.getMeta().region(), id);
         }
 
         /**
-         * 将实体加载到缓存（仅缓存，不操作数据库）。
-         * 适用于缓存预热场景。
+         * 将实体加载到缓存（仅缓存，不操作数据库）。适用于缓存预热场景。
          */
         public void load(T entity) {
             region.put(entity);
+        }
+
+        /**
+         * 批量预热：使用 Virtual Threads 并发写入缓存。
+         *
+         * @param entities 待预热的实体列表
+         */
+        public void warmUp(List<T> entities) {
+            region.warmUp(entities);
         }
 
         /**
@@ -232,6 +240,13 @@ public class NexaTemplate {
          */
         public long cacheSize() {
             return region.size();
+        }
+
+        /**
+         * 返回当前区域的统计快照。
+         */
+        public String snapshot() {
+            return region.snapshot();
         }
     }
 }

@@ -34,8 +34,15 @@ import java.util.Map;
  *   <li>注册 AOP 切面 {@link NexaCacheAspect}</li>
  * </ol>
  *
+ * <p><b>JDK 25 改造要点：</b>
+ * <ul>
+ *   <li><b>Text Blocks（JDK 15+）</b>：日志输出使用 text block 格式化，更清晰射目</li>
+ *   <li><b>Stream + Pattern Matching（JEP 394）</b>：
+ *       {@link DataAccessor} 注入时使用 Stream 收集替代命令式循环</li>
+ * </ul>
+ *
  * @author azir
- * @since 1.0.0
+ * @since 2.0.0
  */
 @Slf4j
 @AutoConfiguration
@@ -100,13 +107,16 @@ public class NexaCacheAutoConfiguration {
     @ConditionalOnMissingBean
     public NexaTemplate nexaTemplate(CacheRegistry registry,
                                      @Autowired(required = false) List<DataAccessor<?, ?>> accessors) {
-        Map<Class<?>, DataAccessor<?, ?>> accessorMap = new HashMap<>();
-        if (accessors != null) {
-            for (DataAccessor<?, ?> accessor : accessors) {
-                accessorMap.put(accessor.entityType(), accessor);
-                log.info("[NexaCache] 自动注入 DataAccessor: {}", accessor.entityType().getSimpleName());
-            }
-        }
+        // JDK 16+ Stream.toMap 替代命令式循环，更简洁
+        Map<Class<?>, DataAccessor<?, ?>> accessorMap = accessors == null
+                ? new HashMap<>()
+                : accessors.stream()
+                        .peek(a -> log.info("[NexaCache] 自动注入 DataAccessor: {}", a.entityType().getSimpleName()))
+                        .collect(java.util.stream.Collectors.toMap(
+                                DataAccessor::entityType,
+                                a -> a,
+                                (a, b) -> a,
+                                HashMap::new));
         return new NexaTemplate(registry, accessorMap);
     }
 

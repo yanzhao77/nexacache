@@ -70,13 +70,13 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
         T entity;
         if (cached.isPresent()) {
             entity = cached.get();
-            log.debug("[NexaCache-RS] START 缓存命中: region={}, id={}", region.getMeta().getRegion(), id);
+            log.debug("[NexaCache-RS] START 缓存命中: region={}, id={}", region.getMeta().region(), id);
         } else {
             entity = accessor.findById(id)
                     .orElseThrow(() -> new NexaCacheException(
                             "START 失败：数据库中不存在 id=" + id + " 的记录"));
             region.put(entity);
-            log.debug("[NexaCache-RS] START 从数据库加载: region={}, id={}", region.getMeta().getRegion(), id);
+            log.debug("[NexaCache-RS] START 从数据库加载: region={}, id={}", region.getMeta().region(), id);
         }
         this.cursor = new Cursor<>(id);
         this.cursor.snapshot(id, entity);
@@ -108,7 +108,7 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
         this.cursor = new Cursor<>(idList);
         // 为每条记录记录版本快照
         entities.forEach(e -> cursor.snapshot((ID) region.getMeta().extractId(e), e));
-        log.info("[NexaCache-RS] OPEN 完成: region={}, 共 {} 条记录", region.getMeta().getRegion(), entities.size());
+        log.info("[NexaCache-RS] OPEN 完成: region={}, 共 {} 条记录", region.getMeta().region(), entities.size());
         return this;
     }
 
@@ -210,7 +210,7 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
         ensureNotClosed();
         accessor.insert(entity);
         region.put(entity);
-        log.debug("[NexaCache-RS] WRITE 完成: region={}", region.getMeta().getRegion());
+        log.debug("[NexaCache-RS] WRITE 完成: region={}", region.getMeta().region());
         return entity;
     }
 
@@ -243,7 +243,7 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
         region.put(entity);
         // 更新版本快照（cursor 为 null 时跳过）
         if (cursor != null) cursor.snapshot(id, entity);
-        log.debug("[NexaCache-RS] REWRITE 完成: region={}, id={}", region.getMeta().getRegion(), id);
+        log.debug("[NexaCache-RS] REWRITE 完成: region={}, id={}", region.getMeta().region(), id);
         return entity;
     }
 
@@ -259,7 +259,7 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
             accessor.deleteById(id);
             region.evict(id);
             cursor.removeCurrent(); // 从游标 idList 中移除该条记录
-            log.debug("[NexaCache-RS] DELETE 完成: region={}, id={}", region.getMeta().getRegion(), id);
+            log.debug("[NexaCache-RS] DELETE 完成: region={}, id={}", region.getMeta().region(), id);
         });
     }
 
@@ -272,7 +272,7 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
         ensureNotClosed();
         accessor.deleteById(id);
         region.evict(id);
-        log.debug("[NexaCache-RS] DELETE by id 完成: region={}, id={}", region.getMeta().getRegion(), id);
+        log.debug("[NexaCache-RS] DELETE by id 完成: region={}, id={}", region.getMeta().region(), id);
     }
 
     // ===================== CLOSE 操作 =====================
@@ -285,7 +285,7 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
     public void close() {
         if (cursor != null && cursor.getState() != CursorState.CLOSED) {
             cursor.close();
-            log.debug("[NexaCache-RS] CLOSE: region={}", region.getMeta().getRegion());
+            log.debug("[NexaCache-RS] CLOSE: region={}", region.getMeta().region());
         }
     }
 

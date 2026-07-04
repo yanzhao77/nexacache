@@ -2,7 +2,7 @@
 
 <br/>
 
-<img src="https://img.shields.io/badge/NexaCache-v1.1.0-6C63FF?style=for-the-badge&logo=databricks&logoColor=white" alt="NexaCache"/>
+<img src="https://img.shields.io/badge/NexaCache-v2.0.0-6C63FF?style=for-the-badge&logo=databricks&logoColor=white" alt="NexaCache"/>
 
 <br/><br/>
 
@@ -10,8 +10,8 @@
 
 <br/>
 
-[![Java](https://img.shields.io/badge/Java-21-ED8B00?style=flat-square&logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/21/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2.3-6DB33F?style=flat-square&logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Java](https://img.shields.io/badge/Java-25-ED8B00?style=flat-square&logo=openjdk&logoColor=white)](https://openjdk.org/projects/jdk/25/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.0-6DB33F?style=flat-square&logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
 [![Caffeine](https://img.shields.io/badge/Caffeine-3.1.8-FF6B35?style=flat-square&logo=coffeescript&logoColor=white)](https://github.com/ben-manes/caffeine)
 [![MyBatis](https://img.shields.io/badge/MyBatis-3.0.3-E74C3C?style=flat-square)](https://mybatis.org/)
 [![License](https://img.shields.io/badge/License-MIT-27AE60?style=flat-square)](LICENSE)
@@ -20,7 +20,7 @@
 
 <br/>
 
-[快速开始](#-快速开始) · [架构设计](#-架构设计) · [API 文档](#-api-文档) · [性能基准](#-性能基准) · [模块说明](#-模块说明)
+[快速开始](#-快速开始) · [架构设计](#-架构设计) · [JDK 25 新特性](#-jdk-25-新特性) · [API 文档](#-api-文档) · [性能基准](#-性能基准)
 
 <br/>
 
@@ -34,12 +34,29 @@
 
 与引入 Redis 相比，NexaCache 无需额外部署任何外部服务，没有网络序列化开销，适合对延迟极度敏感、希望保持架构简洁的单机或小规模集群场景。
 
-**核心技术特点：**
+**v2.0.0 核心技术特点：**
+- **全面拥抱 JDK 25**：引入 Record、Virtual Threads、Stream Gatherers、Pattern Matching 等最新语言特性
 - 缓存引擎基于 [Caffeine](https://github.com/ben-manes/caffeine)，支持 LRU 淘汰与 TTL 过期
 - 持久层通过 `DataAccessor` SPI 接口与 ORM 完全解耦，内置 MyBatis 适配器
 - 支持注解声明式（`@NexaCacheable` / `@NexaCacheEvict`）和编程式（`NexaTemplate`）两套 API
 - 高级记录集 API 支持数据库游标风格的逐条操作与无侵入乐观锁
 - 提供 Spring Boot Starter，引入依赖即可开箱使用
+
+---
+
+## 🚀 JDK 25 新特性 (v2.0.0)
+
+NexaCache v2.0.0 已全面重构，深度融合 JDK 25 的现代语言特性，带来更安全、更高效、更具表现力的开发体验：
+
+| JDK 25 特性 | NexaCache 应用场景 | 带来的优势 |
+|---|---|---|
+| **Record Classes (JEP 395)** | `EntityMeta` 重构为 Record | 不可变数据载体，自动生成 equals/hashCode，内存占用更小 |
+| **Virtual Threads (JEP 444)** | `CacheRegion.warmUp()` 并发预热 | 轻量级线程极大提升大批量数据预热时的吞吐量 |
+| **Stream Gatherers (JEP 461)** | `CacheRegion.getAll()` 分批查询 | 使用 `windowFixed` 实现优雅的流式分批处理，替代传统 for 循环 |
+| **Pattern Matching (JEP 394)** | `AbstractMyBatisAccessor` 方法调用 | 简化类型检查与强转，使反射调用更加安全简洁 |
+| **Sealed Classes (JEP 409)** | `NexaCacheException` 异常体系 | 限制异常子类，配合 switch 表达式实现穷尽的异常处理 |
+| **Switch Expressions (JEP 361)** | 方法路由与异常处理 | 替代繁琐的 if-else 链，代码逻辑更清晰 |
+| **Text Blocks (JEP 378)** | 日志格式化与统计快照 | 多行字符串拼接更直观，告别 `\n` 和 `+` 号拼接 |
 
 ---
 
@@ -131,9 +148,9 @@ entity.findById(id)
 
 ### 环境要求
 
-- JDK 21+
-- Spring Boot 3.x
-- Maven 3.8+
+- **JDK 25**
+- Spring Boot 3.5+
+- Maven 3.9+
 
 ### Step 1：引入依赖
 
@@ -170,14 +187,14 @@ NexaCache 已发布到 **GitHub Packages**，使用前需要在 `~/.m2/settings.
 <dependency>
     <groupId>io.nexacache</groupId>
     <artifactId>nexacache-spring-boot-starter</artifactId>
-    <version>1.1.0</version>
+    <version>2.0.0</version>
 </dependency>
 
 <!-- MyBatis 适配器 -->
 <dependency>
     <groupId>io.nexacache</groupId>
     <artifactId>nexacache-adapter-mybatis</artifactId>
-    <version>1.1.0</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -373,7 +390,7 @@ logging:
 
 ## 📊 性能基准
 
-以下数据基于 SQLite 数据库、JDK 21、M1 Pro 环境下的实测结果：
+以下数据基于 SQLite 数据库、JDK 25、M1 Pro 环境下的实测结果：
 
 | 操作 | 执行次数 | 总耗时 | 单次均耗时 | 说明 |
 |---|---|---|---|---|
@@ -418,24 +435,20 @@ nexacache/
 
 ## 🔬 测试覆盖
 
-核心模块包含 **35 个单元测试**，全部通过，覆盖以下场景：
+核心模块与 Demo 模块包含 **55 个测试用例**，全部通过，覆盖以下场景：
 
 | 测试套件 | 测试数 | 覆盖场景 |
 |---|---|---|
 | `EntityMetaTests` | 5 | 注解解析、默认值、主键提取、缓存键构建、异常处理 |
 | `CacheRegionTests` | 7 | 写入/读取、未命中、驱逐、指针同步、清空、更新覆盖 |
 | `CacheRegistryTests` | 4 | 注册、幂等性、未注册异常、全量清空 |
-| `RecordSetSessionTest$StartTests` | 4 | START 加载、缓存命中、不存在 ID 异常、版本快照 |
-| `RecordSetSessionTest$OpenAndCursorTests` | 7 | openAll、next 遍历、EOF 状态、first/last/prev 游标导航 |
-| `RecordSetSessionTest$WriteTests` | 1 | WRITE 持久化并回填主键 |
-| `RecordSetSessionTest$RewriteTests` | 2 | REWRITE 更新、无快照时跳过乐观锁 |
-| `RecordSetSessionTest$DeleteTests` | 2 | DELETE 游标当前记录、deleteById |
-| `RecordSetSessionTest$CloseTests` | 3 | CLOSE 状态变更、关闭后操作异常、try-with-resources |
+| `RecordSetSessionTest` | 19 | START 加载、游标导航、乐观锁、读写操作、异常处理 |
+| `ProductServiceTest` | 20 | Spring Boot 集成、注解驱动、CRUD、缓存预热、统计信息 |
 
 运行测试：
 
 ```bash
-mvn test -pl nexacache-core
+mvn test
 ```
 
 ---

@@ -36,7 +36,7 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  *
  * @author azir
- * @since 1.1.0
+ * @since 2.0.0
  */
 @BenchmarkMode(Mode.AverageTime)
 @OutputTimeUnit(TimeUnit.NANOSECONDS)
