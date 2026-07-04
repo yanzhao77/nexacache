@@ -45,13 +45,20 @@ public class NexaCacheAspect {
         Optional<Object> cached = cacheRegion.get(cacheKey);
         if (cached.isPresent()) {
             log.debug("[NexaCache] @NexaCacheable 命中: region={}, key={}", region, cacheKey);
+            // 若原方法返回类型是 Optional，需包装回去
+            MethodSignature sig = (MethodSignature) pjp.getSignature();
+            if (Optional.class.isAssignableFrom(sig.getReturnType())) {
+                return cached;
+            }
             return cached.get();
         }
 
         // 未命中，执行原方法
         Object result = pjp.proceed();
-        if (result != null) {
-            cacheRegion.put(result);
+        // 自动解包 Optional（方法返回 Optional<T> 时，取出内部对象写入缓存）
+        Object toCache = (result instanceof Optional<?> opt) ? opt.orElse(null) : result;
+        if (toCache != null) {
+            cacheRegion.put(toCache);
             log.debug("[NexaCache] @NexaCacheable 回填: region={}, key={}", region, cacheKey);
         }
         return result;

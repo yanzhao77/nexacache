@@ -1,7 +1,7 @@
 package io.nexacache.autoconfigure;
 
-import io.nexacache.api.NexaTemplate;
 import io.nexacache.annotation.NexaEntity;
+import io.nexacache.api.NexaTemplate;
 import io.nexacache.cache.CacheRegistry;
 import io.nexacache.cache.NexaCacheAspect;
 import io.nexacache.spi.DataAccessor;
@@ -14,6 +14,11 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.EnableAspectJAutoProxy;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
+import org.springframework.core.type.classreading.MetadataReader;
+import org.springframework.core.type.classreading.MetadataReaderFactory;
 
 import java.util.HashMap;
 import java.util.List;
@@ -23,7 +28,8 @@ import java.util.Map;
  * NexaCache Spring Boot 自动装配配置。
  * 负责在应用启动时：
  * <ol>
- *   <li>创建并初始化 {@link CacheRegistry}，扫描所有 {@link NexaEntity} 实体</li>
+ *   <li>扫描 {@code nexacache.scan-packages} 配置的包路径，注册所有 {@link NexaEntity} 实体（支持纯 POJO）</li>
+ *   <li>兜底扫描 Spring 容器中已有的 Bean，注册标注了 {@link NexaEntity} 的类型</li>
  *   <li>收集所有 {@link DataAccessor} Bean，注入 {@link NexaTemplate}</li>
  *   <li>注册 AOP 切面 {@link NexaCacheAspect}</li>
  * </ol>
@@ -42,11 +48,39 @@ public class NexaCacheAutoConfiguration {
     @ConditionalOnMissingBean
     public CacheRegistry nexaCacheRegistry(NexaCacheProperties properties, ApplicationContext context) {
         CacheRegistry registry = new CacheRegistry();
-
-        // 扫描 Spring 容器中所有标注了 @NexaEntity 的 Bean 类型
-        String[] beanNames = context.getBeanDefinitionNames();
         int count = 0;
-        for (String beanName : beanNames) {
+
+        // ── 1. ClassPath 包扫描（支持纯 POJO，不依赖 Spring Bean）──
+        if (!properties.getScanPackages().isEmpty()) {
+            log.info("[NexaCache] 开始扫描 @NexaEntity 包路径: {}", properties.getScanPackages());
+            PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+            MetadataReaderFactory readerFactory = new CachingMetadataReaderFactory(resolver);
+
+            for (String pkg : properties.getScanPackages()) {
+                String pattern = "classpath*:" + pkg.replace('.', '/') + "/**/*.class";
+                try {
+                    Resource[] resources = resolver.getResources(pattern);
+                    for (Resource resource : resources) {
+                        try {
+                            MetadataReader reader = readerFactory.getMetadataReader(resource);
+                            String className = reader.getClassMetadata().getClassName();
+                            Class<?> clazz = Class.forName(className);
+                            if (clazz.isAnnotationPresent(NexaEntity.class)) {
+                                registry.register(clazz);
+                                count++;
+                            }
+                        } catch (Exception ignored) {
+                            // 跳过无法加载的类（接口、抽象类等）
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("[NexaCache] 扫描包路径 [{}] 失败: {}", pkg, e.getMessage());
+                }
+            }
+        }
+
+        // ── 2. 兜底：扫描 Spring 容器中已有的 Bean 类型 ──
+        for (String beanName : context.getBeanDefinitionNames()) {
             try {
                 Class<?> beanType = context.getType(beanName);
                 if (beanType != null && beanType.isAnnotationPresent(NexaEntity.class)) {
@@ -58,11 +92,6 @@ public class NexaCacheAutoConfiguration {
             }
         }
 
-        // 额外扫描配置中指定的包路径
-        if (!properties.getScanPackages().isEmpty()) {
-            log.info("[NexaCache] 从配置包路径扫描 @NexaEntity: {}", properties.getScanPackages());
-        }
-
         log.info("[NexaCache] 自动装配完成，共注册 {} 个缓存区域", count);
         return registry;
     }
@@ -70,7 +99,7 @@ public class NexaCacheAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean
     public NexaTemplate nexaTemplate(CacheRegistry registry,
-                                      @Autowired(required = false) List<DataAccessor<?, ?>> accessors) {
+                                     @Autowired(required = false) List<DataAccessor<?, ?>> accessors) {
         Map<Class<?>, DataAccessor<?, ?>> accessorMap = new HashMap<>();
         if (accessors != null) {
             for (DataAccessor<?, ?> accessor : accessors) {

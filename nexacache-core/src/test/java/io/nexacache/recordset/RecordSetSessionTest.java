@@ -139,11 +139,10 @@ class RecordSetSessionTest {
         void next_shouldIterateAllRecords() {
             rs.openAll();
             List<String> names = new ArrayList<>();
-            // 游标初始在第 0 条，先读当前再 next
-            rs.current().ifPresent(i -> names.add(i.getName()));
-            while (rs.next()) {
+            // 游标初始在第一条（position=0），先读当前再 next
+            do {
                 rs.current().ifPresent(i -> names.add(i.getName()));
-            }
+            } while (rs.next());
             assertEquals(3, names.size());
             assertEquals(List.of("苹果", "香蕉", "橙子"), names);
         }
@@ -152,7 +151,8 @@ class RecordSetSessionTest {
         @DisplayName("next() 到末尾后状态应变为 EOF")
         void next_pastEnd_shouldBeEof() {
             rs.openAll();
-            while (rs.next()) { /* 遍历到底 */ }
+            // 初始在第一条，调用 next() 直到 EOF
+            do { /* 遍历到底 */ } while (rs.next());
             assertEquals(CursorState.EOF, rs.state());
         }
 
@@ -275,7 +275,7 @@ class RecordSetSessionTest {
         void close_thenOperate_shouldThrow() {
             rs.openAll();
             rs.close();
-            assertThrows(NexaCacheException.class, () -> rs.next());
+            assertThrows(IllegalStateException.class, () -> rs.next());
         }
 
         @Test

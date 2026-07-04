@@ -79,10 +79,11 @@ public final class EntityMeta<T> {
     }
 
     /**
-     * 构建缓存键：region + ":" + id
+     * 构建缓存键：region + ":" + id.toString()
+     * 注意：统一转为字符串再拼接，避免 Integer/Long 等包装类型不同导致的 key 不一致问题
      */
     public String buildCacheKey(Object id) {
-        return region + ":" + id;
+        return region + ":" + id.toString();
     }
 
     private static Field findIdField(Class<?> clazz) {

@@ -128,9 +128,20 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
      *
      * @return 当前记录的 Optional 包装
      */
+    @SuppressWarnings("unchecked")
     public Optional<T> current() {
         ensureNotClosed();
-        return cursor.currentId().flatMap(region::get);
+        return cursor.currentId().flatMap(id -> {
+            Optional<T> cached = region.get(id);
+            if (cached.isPresent()) {
+                return cached;
+            }
+            // 缓存未命中（可能被驱逐），从数据库补查并回填
+            log.debug("[NexaCache-RS] current() 缓存未命中，从数据库补查: id={}", id);
+            Optional<T> fromDb = accessor.findById(id);
+            fromDb.ifPresent(region::put);
+            return fromDb;
+        });
     }
 
     /**
@@ -247,6 +258,7 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
         cursor.currentId().ifPresent(id -> {
             accessor.deleteById(id);
             region.evict(id);
+            cursor.removeCurrent(); // 从游标 idList 中移除该条记录
             log.debug("[NexaCache-RS] DELETE 完成: region={}, id={}", region.getMeta().getRegion(), id);
         });
     }
@@ -311,7 +323,7 @@ public final class RecordSetSession<T, ID> implements AutoCloseable {
 
     private void ensureNotClosed() {
         if (cursor != null && cursor.getState() == CursorState.CLOSED) {
-            throw new NexaCacheException("[NexaCache-RS] 记录集已关闭，请重新打开后操作");
+            throw new IllegalStateException("[NexaCache-RS] 记录集已关闭，请重新打开后操作");
         }
         // cursor 为 null 表示尚未初始化（IDLE 状态），允许部分操作（如 write、rewrite）
     }

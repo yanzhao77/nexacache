@@ -117,6 +117,10 @@
                     <source>${java.version}</source>
                     <target>${java.version}</target>
                     <encoding>UTF-8</encoding>
+                    <!-- 保留方法参数名，供 Spring SpEL (#paramName) 正确解析 -->
+                    <compilerArgs>
+                        <arg>-parameters</arg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
         </plugins>

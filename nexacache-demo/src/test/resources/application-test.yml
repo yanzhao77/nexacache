@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: nexacache-demo-test
+  datasource:
+    url: jdbc:sqlite::memory:?cache=shared
+    driver-class-name: org.sqlite.JDBC
+
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+nexacache:
+  enabled: true
+  scan-packages:
+    - io.nexacache.demo.entity
+
+logging:
+  level:
+    io.nexacache: DEBUG
+    io.nexacache.demo: INFO
