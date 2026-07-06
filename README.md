@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="./src/main/resources/static/images/nexacache-logo.png" alt="NexaCache Logo" width="300"/>
+<img src="images/nexacache-logo.png" alt="NexaCache Logo" width="300"/>
 
 <br/>
 
